@@ -97,7 +97,7 @@
   var G = {
     mode: 'easy', running: false, stage: 0, lives: 5, score: 0,
     paddle: { x: W / 2, w: 120, h: 18, y: H - 60 },
-    ball: null, bricks: [], items: [], sparks: [], stuck: true, msg: '', msgT: 0
+    ball: null, bricks: [], items: [], sparks: [], stuck: true, paused: false, msg: '', msgT: 0
   };
 
   function makeBricks(si) {
@@ -115,7 +115,7 @@
 
   function resetBall() {
     G.ball = { x: 0, y: 0, r: 10, vx: 0, vy: 0, sp: MODES[G.mode].speed };
-    G.stuck = true;
+    G.stuck = true; G.paused = false;
     holdBall();
   }
 
@@ -157,7 +157,7 @@
     var p = G.paddle;
     p.x = Math.max(p.w / 2, Math.min(W - p.w / 2, x));
   }
-  function onDown(e) { onMove(e); launch(); }
+  function onDown(e) { onMove(e); G.paused = false; launch(); }
   function onMove(e) {
     var t = e.touches ? e.touches[0] : e;
     if (t) setPaddleX((t.clientX - cv.getBoundingClientRect().left) / scale);
@@ -169,9 +169,15 @@
   wrap.addEventListener('mousedown', onDown);
   wrap.addEventListener('mousemove', onMove);
 
+  // アプリ切り替えや通知で画面を離れたら止め、戻ってすぐボールが落ちないようにする（再開はタップ）
+  function pause() { if (G.running && !G.stuck) G.paused = true; }
+  document.addEventListener('visibilitychange', function () { if (document.hidden) pause(); });
+  window.addEventListener('pagehide', pause);
+  window.addEventListener('blur', pause);
+
   // ---- うごき・びょうが ----
   function update() {
-    if (!G.running) return;
+    if (!G.running || G.paused) return;
     var b = G.ball, p = G.paddle;
 
     if (G.stuck) holdBall();
@@ -320,6 +326,12 @@
     }
 
     if (G.stuck) text('がめんを タップで スタート！', W / 2, H - 130, 'bold 22px sans-serif', '#fff');
+    if (G.paused) {
+      ctx.fillStyle = 'rgba(8,10,32,.7)'; ctx.fillRect(0, HUD_H, W, H - HUD_H);
+      text('ちょっと おやすみ', W / 2, H / 2 - 30, 'bold 34px sans-serif', '#ffd166');
+      text('タップで つづける', W / 2, H / 2 + 20, 'bold 22px sans-serif', '#fff');
+      return;
+    }
     if (G.msgT > 0) {
       ctx.globalAlpha = Math.min(1, G.msgT / 25);
       text(G.msg, W / 2, H / 2, 'bold 34px sans-serif', '#ffd166');
