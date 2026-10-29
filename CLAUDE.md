@@ -1,4 +1,4 @@
-# block-kuzushi（奏志くん向けブロックくずし）
+# block-kuzushi（ブロックくずし）
 
 単一HTMLのゲーム。GitHub Pages で `main` を配信している（push すると公開ページに反映される）。
 
