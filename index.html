@@ -61,7 +61,7 @@
   var STEP = 1000 / 60; // update 1回ぶんの時間(ms)
   var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
   var wrap = document.getElementById('wrap');
-  var scale = 1;
+  var scale = 1, needsDraw = true;
 
   function resize() {
     var pad = 8;
@@ -73,6 +73,7 @@
     cv.width = Math.round(W * scale * dpr);
     cv.height = Math.round(H * scale * dpr);
     ctx.setTransform(scale * dpr, 0, 0, scale * dpr, 0, 0);
+    needsDraw = true;
   }
   window.addEventListener('resize', resize);
   window.addEventListener('orientationchange', function () { setTimeout(resize, 300); });
@@ -142,6 +143,7 @@
     G.score = 0; G.paddle.x = W / 2; G.sparks = [];
     loadStage(0);
     show(null); G.running = true;
+    resetClock();
   }
 
   function say(t) { G.msg = t; G.msgT = 90; }
@@ -157,8 +159,19 @@
     var p = G.paddle;
     p.x = Math.max(p.w / 2, Math.min(W - p.w / 2, x));
   }
-  function onDown(e) { onMove(e); G.paused = false; launch(); }
+  function onDown(e) {
+    if (!G.running) return;
+    // 再開のタップではパドルを移動せず、停止直前の状態を保つ。
+    if (G.paused) {
+      G.paused = false;
+      resetClock();
+      if (e.cancelable) e.preventDefault();
+      return;
+    }
+    onMove(e); launch();
+  }
   function onMove(e) {
+    if (!G.running || G.paused) return;
     var t = e.touches ? e.touches[0] : e;
     if (t) setPaddleX((t.clientX - cv.getBoundingClientRect().left) / scale);
     if (e.cancelable) e.preventDefault();
@@ -170,12 +183,20 @@
   wrap.addEventListener('mousemove', onMove);
 
   // アプリ切り替えや通知で画面を離れたら止め、戻ってすぐボールが落ちないようにする（再開はタップ）
-  function pause() { if (G.running && !G.stuck) G.paused = true; }
+  function pause() {
+    if (G.running) { G.paused = true; needsDraw = true; }
+  }
   document.addEventListener('visibilitychange', function () { if (document.hidden) pause(); });
   window.addEventListener('pagehide', pause);
   window.addEventListener('blur', pause);
 
   // ---- うごき・びょうが ----
+  function overlapsCircleRect(b, x, y, w, h) {
+    var cx = Math.max(x, Math.min(b.x, x + w));
+    var cy = Math.max(y, Math.min(b.y, y + h));
+    return (b.x - cx) * (b.x - cx) + (b.y - cy) * (b.y - cy) < b.r * b.r;
+  }
+
   function update() {
     if (!G.running || G.paused) return;
     var b = G.ball, p = G.paddle;
@@ -190,8 +211,7 @@
         if (b.y < b.r + HUD_H) { b.y = b.r + HUD_H; b.vy = Math.abs(b.vy); }
 
         // パドル
-        if (b.vy > 0 && b.y + b.r >= p.y && b.y - b.r <= p.y + p.h &&
-            b.x >= p.x - p.w / 2 - b.r && b.x <= p.x + p.w / 2 + b.r) {
+        if (b.vy > 0 && overlapsCircleRect(b, p.x - p.w / 2, p.y, p.w, p.h)) {
           b.y = p.y - b.r;
           var rel = (b.x - p.x) / (p.w / 2);
           rel = Math.max(-1, Math.min(1, rel));
@@ -203,8 +223,7 @@
         for (var i = 0; i < G.bricks.length; i++) {
           var k = G.bricks[i];
           // ブロック上でボールに一番近い点との距離で判定する（四角どうしだと角をかすっただけで当たる）
-          var cx = Math.max(k.x, Math.min(b.x, k.x + k.w)), cy = Math.max(k.y, Math.min(b.y, k.y + k.h));
-          if ((b.x - cx) * (b.x - cx) + (b.y - cy) * (b.y - cy) < b.r * b.r) {
+          if (overlapsCircleRect(b, k.x, k.y, k.w, k.h)) {
             // 進む向きのめり込み量÷速さ ＝ その軸で重なってからの時間。
             // 後から重なった軸で反射し、同じブロックに連続で当たらないよう外へ押し出す
             var px = b.vx > 0 ? b.x + b.r - k.x : k.x + k.w - (b.x - b.r);
@@ -344,6 +363,7 @@
   function show(el) {
     elTitle.classList.remove('on'); elOver.classList.remove('on');
     if (el) el.classList.add('on');
+    needsDraw = true;
   }
   function gameOver(clear) {
     G.running = false;
@@ -358,12 +378,13 @@
 
   // ---- ループ ----
   // 画面の更新間隔（60Hz/120Hz など）によらず、1秒に60回 update する
-  var acc = 0, last = 0;
+  var acc = 0, last = null;
+  function resetClock() { acc = 0; last = null; }
   function loop(now) {
-    if (last) acc += Math.min(now - last, 100); // タブ復帰時などに一気に進まないよう上限を設ける
+    if (last !== null) acc += Math.min(now - last, 100); // タブ復帰時などに一気に進まないよう上限を設ける
     last = now;
     while (acc >= STEP - 2) { update(); acc -= STEP; } // -2ms は 60Hz の揺らぎでコマ落ちしないための遊び
-    draw();
+    if (needsDraw || (G.running && !G.paused)) { draw(); needsDraw = false; }
     requestAnimationFrame(loop);
   }
   requestAnimationFrame(loop);
